@@ -10,6 +10,11 @@ else
 	GDB=gdb
 fi
 
+UNAME_S=`uname -s`
+if [[  $UNAME_S == 'Darwin' ]]
+then GDB=i686-elf-gdb
+fi
+
 # Run GDB.
 if test -f "$GDBMACROS"; then
 	exec $GDB -x "$GDBMACROS" "$@"
