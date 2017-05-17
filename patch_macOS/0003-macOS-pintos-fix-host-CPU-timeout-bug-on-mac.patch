@@ -1,0 +1,39 @@
+From fcbf1bb9ea3fb40674700f3d0d4c1d8a049800bf Mon Sep 17 00:00:00 2001
+From: Levente Kurusa <levex@linux.com>
+Date: Sat, 14 Jan 2017 21:27:34 +0000
+Subject: [PATCH 3/6] macOS: pintos: fix host CPU timeout bug on mac
+
+Signed-off-by: Levente Kurusa <levex@linux.com>
+---
+ src/utils/pintos | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/src/utils/pintos b/src/utils/pintos
+index a7f2b26..e7ba594 100755
+--- a/src/utils/pintos
++++ b/src/utils/pintos
+@@ -899,14 +899,19 @@ sub timeout {
+ # Returns the system load average over the last minute.
+ # If the load average is less than 1.0 or cannot be determined, returns 1.0.
+ sub get_load_average {
+-    my ($avg) = `uptime` =~ /load average:\s*([^,]+),/;
++    my $avg;
++    if ($^O == 'darwin') {
++	$avg = (split /\s/, `uptime`)[11];
++    } else {
++        $avg = `uptime` =~ /load average:\s*([^,]+),/;
++    }
+     return $avg >= 1.0 ? $avg : 1.0;
+ }
+ 
+ # Calls setitimer to set a timeout, then execs what was passed to us.
+ sub exec_setitimer {
+     if (defined $timeout) {
+-	if ($] ge 5.8.0) {
++	if ($] ge 5.8.0 && $^O != 'darwin') {
+ 	    eval "
+               use Time::HiRes qw(setitimer ITIMER_VIRTUAL);
+               setitimer (ITIMER_VIRTUAL, $timeout, 0);
+-- 
+2.10.2
+

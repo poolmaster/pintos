@@ -620,12 +620,22 @@ sub run_qemu {
       if $vga eq 'terminal';
     print "warning: qemu doesn't support jitter\n"
       if defined $jitter;
-    my (@cmd) = ('qemu-system-i386');
-    push (@cmd, '-device', 'isa-debug-exit');
-    push (@cmd, '-hda', $disks[0]) if defined $disks[0];
-    push (@cmd, '-hdb', $disks[1]) if defined $disks[1];
-    push (@cmd, '-hdc', $disks[2]) if defined $disks[2];
-    push (@cmd, '-hdd', $disks[3]) if defined $disks[3];
+
+    #manually apply for macos patch
+    #patch start
+    #my (@cmd) = ('qemu-system-i386');
+    my (@cmd) = ('qemu-system-x86_64');
+    push (@cmd, '-device', 'isa-debug-exit'); #this line was not patched
+    #push (@cmd, '-hda', $disks[0]) if defined $disks[0];
+    #push (@cmd, '-hdb', $disks[1]) if defined $disks[1];
+    #push (@cmd, '-hdc', $disks[2]) if defined $disks[2];
+    #push (@cmd, '-hdd', $disks[3]) if defined $disks[3];
+    push (@cmd, '-drive', 'format=raw,media=disk,index=0,file=' . $disks[0]) if defined $disks[0];
+    push (@cmd, '-drive', 'format=raw,media=disk,index=1,file=' . $disks[1]) if defined $disks[1];
+    push (@cmd, '-drive', 'format=raw,media=disk,index=2,file=' . $disks[2]) if defined $disks[2];
+    push (@cmd, '-drive', 'format=raw,media=disk,index=3,file=' . $disks[3]) if defined $disks[3];
+    #patch end
+  
     push (@cmd, '-m', $mem);
     push (@cmd, '-net', 'none');
     push (@cmd, '-nographic') if $vga eq 'none';
@@ -906,27 +916,38 @@ sub timeout {
 # Returns the system load average over the last minute.
 # If the load average is less than 1.0 or cannot be determined, returns 1.0.
 sub get_load_average {
-    my ($avg) = `uptime` =~ /load average:\s*([^,]+),/;
+    #patch manually
+    #my ($avg) = `uptime` =~ /load average:\s*([^,]+),/;
+    my $avg;
+    if ($^O == 'darwin') {
+      $avg = (split /\s/, `uptime`)[11];
+    } else {
+      $avg = `uptime` =~ /load average:\s*([^,]+),/;
+    }
+    #patch end
     return $avg >= 1.0 ? $avg : 1.0;
 }
 
 # Calls setitimer to set a timeout, then execs what was passed to us.
 sub exec_setitimer {
-    if (defined $timeout) {
-	if ($ ge 5.8.0) {
+  if (defined $timeout) {
+    #patch
+    #if ($ ge 5.8.0) {
+    if ($ ge 5.8.0 && $^O != 'darwin') {
+    #patch end
 	    eval "
               use Time::HiRes qw(setitimer ITIMER_VIRTUAL);
               setitimer (ITIMER_VIRTUAL, $timeout, 0);
             ";
-	} else {
+	  } else {
 	    { exec ("setitimer-helper", $timeout, @_); };
 	    exit 1 if !$!{ENOENT};
 	    print STDERR "warning: setitimer-helper is not installed, so ",
 	      "CPU time limit will not be enforced\n";
-	}
-    }
-    exec (@_);
-    exit (1);
+	  }
+  }
+  exec (@_);
+  exit (1);
 }
 
 sub SIGVTALRM {
