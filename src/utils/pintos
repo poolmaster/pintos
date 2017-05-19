@@ -932,8 +932,7 @@ sub get_load_average {
 sub exec_setitimer {
   if (defined $timeout) {
     #patch
-    #if ($ ge 5.8.0) {
-    if ($ ge 5.8.0 && $^O != 'darwin') {
+    if ($] ge 5.8.0 && $^O != 'darwin') {
     #patch end
 	    eval "
               use Time::HiRes qw(setitimer ITIMER_VIRTUAL);
