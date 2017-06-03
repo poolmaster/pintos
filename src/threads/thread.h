@@ -93,10 +93,15 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
+    /* List element for sleep list. */
+    struct list_elem sleepelem;
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 #endif
+
+    int64_t tick_sleep_until;          /* sleep until timer gets to this tick */
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
@@ -110,7 +115,7 @@ extern bool thread_mlfqs;
 void thread_init (void);
 void thread_start (void);
 
-void thread_tick (void);
+void thread_tick (int64_t cur_tick);
 void thread_print_stats (void);
 
 typedef void thread_func (void *aux);
@@ -137,5 +142,7 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+void thread_sleep_until (int64_t tick);
 
 #endif /* threads/thread.h */

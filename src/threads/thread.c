@@ -28,6 +28,9 @@ static struct list ready_list;
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
 
+/* List of processes in BLOCKED state only because of calling thread_sleep_until */
+static struct list sleep_list;
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -70,6 +73,8 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+static void wakeup_threads_by_tick (int64_t cur_tick);
+static void print_thread_info (struct thread *t, char *prefix);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -87,15 +92,18 @@ static tid_t allocate_tid (void);
 void
 thread_init (void) 
 {
+  printf("in thread_init()\n");
   ASSERT (intr_get_level () == INTR_OFF);
 
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+  list_init (&sleep_list);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
+  /* this is a special case: main thread gets to RUNNING from BLOCKED directly */
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
 }
@@ -107,6 +115,7 @@ thread_start (void)
 {
   /* Create the idle thread. */
   struct semaphore idle_started;
+  printf("in thread_start()\n");
   sema_init (&idle_started, 0);
   thread_create ("idle", PRI_MIN, idle, &idle_started);
 
@@ -120,7 +129,7 @@ thread_start (void)
 /* Called by the timer interrupt handler at each timer tick.
    Thus, this function runs in an external interrupt context. */
 void
-thread_tick (void) 
+thread_tick (int64_t cur_tick) 
 {
   struct thread *t = thread_current ();
 
@@ -134,9 +143,12 @@ thread_tick (void)
   else
     kernel_ticks++;
 
+  wakeup_threads_by_tick(cur_tick);
+
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
+
 }
 
 /* Prints thread statistics. */
@@ -171,6 +183,8 @@ thread_create (const char *name, int priority,
   struct switch_entry_frame *ef;
   struct switch_threads_frame *sf;
   tid_t tid;
+
+  printf("in thread_create()\n");
 
   ASSERT (function != NULL);
 
@@ -212,11 +226,14 @@ thread_create (const char *name, int priority,
    primitives in synch.h. */
 void
 thread_block (void) 
-{
+{ 
+  struct thread *t; 
+
   ASSERT (!intr_context ());
   ASSERT (intr_get_level () == INTR_OFF);
-
-  thread_current ()->status = THREAD_BLOCKED;
+  
+  t = thread_current ();
+  t->status = THREAD_BLOCKED;
   schedule ();
 }
 
@@ -280,6 +297,8 @@ thread_tid (void)
 void
 thread_exit (void) 
 {
+  struct thread *t;
+
   ASSERT (!intr_context ());
 
 #ifdef USERPROG
@@ -290,8 +309,10 @@ thread_exit (void)
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
-  list_remove (&thread_current()->allelem);
-  thread_current ()->status = THREAD_DYING;
+  t = thread_current();
+  ASSERT(t->status != THREAD_BLOCKED);  /*TODO: remove this assert*/
+  list_remove (&t->allelem);
+  t->status = THREAD_DYING;
   schedule ();
   NOT_REACHED ();
 }
@@ -303,12 +324,14 @@ thread_yield (void)
 {
   struct thread *cur = thread_current ();
   enum intr_level old_level;
-  
+ 
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
+  {
     list_push_back (&ready_list, &cur->elem);
+  }
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -366,6 +389,19 @@ thread_get_load_avg (void)
 {
   /* Not yet implemented. */
   return 0;
+}
+
+/* puts thread to sleep until tick being reached */
+void 
+thread_sleep_until (int64_t tick)
+{
+  struct thread *t = thread_current();
+
+  ASSERT (intr_get_level () == INTR_OFF);
+  
+  t->tick_sleep_until = tick;
+  list_push_back (&sleep_list, &t->sleepelem);
+  thread_block();
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
@@ -452,6 +488,8 @@ static void
 init_thread (struct thread *t, const char *name, int priority)
 {
   enum intr_level old_level;
+
+  printf("in init_thread()\n");
 
   ASSERT (t != NULL);
   ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
@@ -578,6 +616,56 @@ allocate_tid (void)
 
   return tid;
 }
+
+/* wake up sleeping threads with tick_sleep_until*/
+static void
+wakeup_threads_by_tick (int64_t cur_tick)
+{
+  struct list_elem *e;
+  
+  ASSERT (intr_get_level () == INTR_OFF);
+ 
+  if (list_empty (&sleep_list))
+    return;
+
+  e = list_begin (&sleep_list);
+  while (e != list_end (&sleep_list)) 
+  {
+    struct thread *t = list_entry (e, struct thread, sleepelem);
+    /* printf("try to wake up threads: current tick=%lld\n", cur_tick); */
+    /* print_thread_info(t, "checking thread\0"); */
+    /*Assumption: sleep thread cannot be waken up by others except this function */
+    ASSERT (t->status == THREAD_BLOCKED); 
+    /* timer_sleep () could be called with negative ticks */
+    /* ASSERT (t->tick_sleep_until >= cur_tick); no missing wakeups */
+    if (t->tick_sleep_until <= cur_tick) 
+    {
+      list_remove(&t->sleepelem);
+      t->tick_sleep_until = 0;  /* not necessary cos being removed from sleep list */
+      thread_unblock (t);
+      /* print_thread_info(t, "thread woken up\0"); */
+    }
+    e = list_next (e);
+  }
+}
+
+/* debug function */
+static void
+print_thread_info (struct thread *t, char *prefix)
+{
+  char *status;
+  enum intr_level old_level = intr_disable();
+  
+  status = (t->status == THREAD_RUNNING) ? "RUNNING\0" :
+           (t->status == THREAD_READY) ? "READY\0" :
+           (t->status == THREAD_BLOCKED) ? "BLOCKED\0" :
+           (t->status == THREAD_DYING) ? "DYING\0" : "INVALID\0";
+
+  printf("%s: T%d: status=%s, name=%s, priority=%d, tick_sleep_util=%lld\n",
+      prefix, t->tid, status, t->name, t->priority, t->tick_sleep_until);
+  intr_set_level (old_level);
+}
+
 
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
