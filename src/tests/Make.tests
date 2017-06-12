@@ -51,7 +51,9 @@ $(foreach test,$(TESTS),$(eval $(test).output: TEST = $(test)))
 # Prevent an environment variable VERBOSE from surprising us.
 VERBOSE =
 
-TESTCMD = pintos -v -k -T $(TIMEOUT)
+# TESTCMD = pintos -v -k -T $(TIMEOUT)
+# perl script doesn't work well with -T cmd
+TESTCMD = pintos -v -k 
 TESTCMD += $(SIMULATOR)
 TESTCMD += $(PINTOSOPTS)
 ifeq ($(filter userprog, $(KERNEL_SUBDIRS)), userprog)
