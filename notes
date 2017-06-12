@@ -1,0 +1,26 @@
+project 1:
+
+idle thread could switch to running directly from blocked state
+
+printf and other heavy-weight stuff could break timer's timing on alarm testing
+
+disable interrupt and restore is often used to have lock and unpreemption
+
+timer_sleep () could have negative input  ?? not sure why 
+
+printf is problematic before console intialized. So, no printf will work correctly in objects used by console, for example, locks !!!!!!
+
+for semaphore/lock priority, if no waiters, need to return PRI_MIN
+
+when release lock, restore priority needs to be careful: if no other holding locks; if there are other locks while they dont have waiters
+
+when to update waiting_lock: only in lock_acquire. before getting it, update, after getting it, reset to NULL
+
+when to update holding_locks: acquire / release
+
+carefully order updates and thread operations: thread operations will do context switch, so update might not take effect
+
+3 lists we care for scheduling: ready_list, semaphore's locks, thread's holding_locks
+  ready_list needs to be ordered: next_to_run () always return the front one
+  waiters needs to be ordered: samaphore/lock's priority comes from waiter's highest priority
+  holding_locks dont need to: we use find_min(max) to get the highest priority lock
