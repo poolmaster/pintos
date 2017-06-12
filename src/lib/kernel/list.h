@@ -93,6 +93,9 @@ struct list_elem
     struct list_elem *next;     /* Next list element. */
   };
 
+bool in_list (struct list_elem *);
+void list_elem_init (struct list_elem *);
+
 /* List. */
 struct list 
   {

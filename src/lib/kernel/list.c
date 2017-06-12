@@ -56,6 +56,21 @@ is_tail (struct list_elem *elem)
   return elem != NULL && elem->prev != NULL && elem->next == NULL;
 }
 
+bool 
+in_list (struct list_elem *elem)
+{
+  ASSERT ((elem->prev == NULL && elem->next == NULL) ||
+          (elem->prev != NULL && elem->next != NULL));
+  return elem != NULL && elem->prev != NULL && elem->next != NULL;
+}
+
+void 
+list_elem_init (struct list_elem *elem)
+{
+  elem->prev = NULL;
+  elem->next = NULL;
+}
+
 /* Initializes LIST as an empty list. */
 void
 list_init (struct list *list)
@@ -81,6 +96,8 @@ list_begin (struct list *list)
 struct list_elem *
 list_next (struct list_elem *elem)
 {
+  ASSERT (elem != NULL);
+  ASSERT (!is_tail (elem));
   ASSERT (is_head (elem) || is_interior (elem));
   return elem->next;
 }
@@ -168,8 +185,8 @@ list_tail (struct list *list)
 void
 list_insert (struct list_elem *before, struct list_elem *elem)
 {
-  ASSERT (is_interior (before) || is_tail (before));
   ASSERT (elem != NULL);
+  ASSERT (is_interior (before) || is_tail (before));
 
   elem->prev = before->prev;
   elem->next = before;
@@ -300,8 +317,11 @@ list_size (struct list *list)
   struct list_elem *e;
   size_t cnt = 0;
 
-  for (e = list_begin (list); e != list_end (list); e = list_next (e))
+  for (e = list_begin (list); e != list_end (list); e = list_next (e)) {
+    ASSERT (e != NULL);
+    ASSERT (is_interior (e));
     cnt++;
+  }
   return cnt;
 }
 
@@ -343,9 +363,10 @@ is_sorted (struct list_elem *a, struct list_elem *b,
            list_less_func *less, void *aux)
 {
   if (a != b)
-    while ((a = list_next (a)) != b) 
+    while ((a = list_next (a)) != b) {
       if (less (a, list_prev (a), aux))
         return false;
+    }
   return true;
 }
 
@@ -452,9 +473,11 @@ list_insert_ordered (struct list *list, struct list_elem *elem,
   ASSERT (elem != NULL);
   ASSERT (less != NULL);
 
-  for (e = list_begin (list); e != list_end (list); e = list_next (e))
+  for (e = list_begin (list); e != list_end (list); e = list_next (e)) {
+    ASSERT (is_interior (e));
     if (less (elem, e, aux))
       break;
+  }
   return list_insert (e, elem);
 }
 
@@ -511,14 +534,18 @@ list_max (struct list *list, list_less_func *less, void *aux)
 struct list_elem *
 list_min (struct list *list, list_less_func *less, void *aux)
 {
+  ASSERT (!list_empty (list));
   struct list_elem *min = list_begin (list);
   if (min != list_end (list)) 
     {
       struct list_elem *e;
       
       for (e = list_next (min); e != list_end (list); e = list_next (e))
+      {
+        ASSERT (is_interior (e));
         if (less (e, min, aux))
           min = e; 
+      }
     }
   return min;
 }
