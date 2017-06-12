@@ -920,7 +920,7 @@ sub get_load_average {
     #patch manually
     #my ($avg) = `uptime` =~ /load average:\s*([^,]+),/;
     my $avg;
-    if ($^O == 'darwin') {
+    if ($^O eq 'darwin') {
       $avg = (split /\s/, `uptime`)[11];
     } else {
       $avg = `uptime` =~ /load average:\s*([^,]+),/;
@@ -933,7 +933,7 @@ sub get_load_average {
 sub exec_setitimer {
   if (defined $timeout) {
     #patch
-    if ($] ge 5.8.0 && $^O != 'darwin') {
+    if ($] ge 5.8.0 && $^O ne 'darwin') {
     #patch end
 	    eval "
               use Time::HiRes qw(setitimer ITIMER_VIRTUAL);
