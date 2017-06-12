@@ -88,9 +88,9 @@ main (void)
   /* Initialize ourselves as a thread so we can use locks,
      then enable console locking. */
   thread_init ();
-  printf ("initialization main: thread_init finished !\n");
+  /*printf ("initialization main: thread_init finished !\n");*/
   console_init ();  
-  printf ("initialization main: console_init finished !\n");
+  /*printf ("initialization main: console_init finished !\n");*/
 
   /* Greet user. */
   printf ("Pintos booting with %'"PRIu32" kB RAM...\n",
@@ -100,7 +100,7 @@ main (void)
   palloc_init (user_page_limit);
   malloc_init ();
   paging_init ();
-  printf ("initialization main: paging_init finished !\n");
+  /*printf ("initialization main: paging_init finished !\n");*/
 
   /* Segmentation. */
 #ifdef USERPROG
@@ -120,7 +120,7 @@ main (void)
 
   /* Start thread scheduler and enable interrupts. */
   thread_start ();
-  printf ("initialization main: thread_started!\n");
+  /*printf ("initialization main: thread_started!\n");*/
 
   serial_init_queue ();
   timer_calibrate ();
