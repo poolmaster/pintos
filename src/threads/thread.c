@@ -461,7 +461,7 @@ thread_donate_priority (struct thread *source_t, struct thread *target_t)
 void
 thread_restore_priority (void)
 {
-  thread_set_priority_helper (thread_current ()->priority, true);
+  thread_set_priority_helper (thread_current ()->base_priority, true);
 }
 
 /* update donated priority */
