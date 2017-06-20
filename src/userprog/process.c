@@ -20,49 +20,125 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static void push_args (const char *[], int cnt, void **esp);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
-tid_t
-process_execute (const char *file_name) 
+pid_t
+process_execute (const char *cmd) 
 {
-  char *fn_copy;
+  char *cmd_copy = NULL;
+  char *file_name = NULL;
+  char *rest = NULL; //use for strtok_r ()
+  struct process *proc = NULL;
   tid_t tid;
 
-  /* Make a copy of FILE_NAME.
+  /* Make a copy of COMMAND.
      Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page (0);
-  if (fn_copy == NULL)
+  cmd_copy = palloc_get_page (0);
+  if (cmd_copy == NULL) {
     return TID_ERROR;
-  strlcpy (fn_copy, file_name, PGSIZE);
+  }
+  strlcpy (cmd_copy, cmd, PGSIZE);
+
+  /* extrac file name from cmd */
+  file_name = palloc_get_page (0);
+  if (file_name == NULL) {
+    palloc_free_page (cmd_copy);
+    return PID_ERROR; 
+  }
+  file_name = strtok_r (cmd_copy, " ", &rest);
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
-  return tid;
+  /* create process control data */
+  proc = palloc_get_page (0);
+  if (proc == NULL) {
+    palloc_free_page (cmd_copy);
+    palloc_free_page (file_name);
+    return PID_ERROR; 
+  }
+  proc->pid = PID_INIT; //set in start_process 
+  proc->cmdline = cmdline_copy;
+  proc->parent_thread = thread_current ();
+  proc->waiting = false;
+  proc->exited = false;
+  proc->orphan = false;
+  proc->exitcode = -1;
+  sema_init(&proc->sema_init, 0);
+  sema_init(&proc->sema_wait, 0);
+
+  /* new thread */
+  tid = thread_create (file_name, PRI_DEFAULT, start_process, proc);
+  if (tid == TID_ERROR) {
+    palloc_free_page (cmd_copy); 
+    palloc_free_page (file_name); 
+    palloc_free_page (proc);
+    return PID_ERROR; 
+  }
+  sema_down (&proc->sema_init); /* wait for initialization in start_process () */
+
+  // process created successfully
+  if (proc->pid >= 0) {
+    list_push_back (&(thread_current ()->child_list), &pcb->elem);
+  }
+
+  //free pages  
+  if (cmd_copy) palloc_free_page (cmd_copy); 
+  if (file_name) palloc_free_page (file_name); 
+  
+  return pcb->pid;
 }
 
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *proc_)
 {
-  char *file_name = file_name_;
-  struct intr_frame if_;
-  bool success;
+  char *proc = proc_;
+  char *cmd = (char *) proc->cmdline;
+  struct thread *cur_t = thread_current ();
+  bool success = false; 
 
+  //command line parse
+  const char **tokens = (const char **) palloc_get_page (0);
+
+  if (tokens == NULL) {
+    printf ("[Error] Kernel Error: No Enough Memory !\n");
+    goto FINISH_STEP; 
+  }
+
+  char *token;
+  char *rest;
+  int argc = 0;
+  while ((token = strtok_r (cmd, " ", &rest))) {
+    tokens[argc++] = token;
+  }
+  
   /* Initialize interrupt frame and load executable. */
+  struct intr_frame if_;
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+  success = load (cmd, &if_.eip, &if_.esp);
 
-  /* If load failed, quit. */
-  palloc_free_page (file_name);
+  if (success) {
+    push_args (tokens, argc, &if_.esp);
+  }
+  palloc_free_page (tokens);
+
+
+FINISH_STEP:
+  palloc_free_page (cmd);
+  /* map pid to tid, assign proc to thread struct */
+  proc->pid = success ? (pid_t)(cur_t->tid) : PID_ERROR;
+  cur_t->proc = proc;
+  
+  /* wake up process_execute () */
+  sema_up (&proc->sema_init);
+
   if (!success) 
     thread_exit ();
 
@@ -88,6 +164,7 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
+
   return -1;
 }
 
@@ -463,3 +540,44 @@ install_page (void *upage, void *kpage, bool writable)
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
+
+static void 
+push_args (char * tokens[], int argc, void **esp)
+{
+  ASSERT(argc > 0);
+
+  int i, len = 0;
+  void* argv_addr[argc];
+
+  /* copy tokens to current stack, store each token's address */
+  for (i = 0; i < argc; i++) {
+    len = strlen(tokens[i]) + 1;
+    *esp -= len;
+    memcpy(*esp, tokens[i], len);
+    argv_addr[i] = *esp;
+  }
+
+  // word align for performance
+  *esp = (void*)((unsigned int)(*esp) & 0xfffffffc);  
+  
+  /* push argv from right to left */
+  *esp -= 4;
+  *((uint32_t*) *esp) = 0; /* arv[argc] = null according to C standards */
+  for (i = argc - 1; i >= 0; i--) {
+    *esp -= 4;
+    *((void**) *esp) = argv_addr[i];
+  }
+
+  // push **argv, it is a variable as well 
+  *esp -= 4;
+  *((void**) *esp) = (*esp + 4);
+
+  // push argc
+  *esp -= 4;
+  *((int*) *esp) = argc;
+  
+  // push fake ret addr
+  *esp -= 4;
+  *((int*) *esp) = 0;
+}
+

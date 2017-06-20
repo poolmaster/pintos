@@ -14,6 +14,9 @@ http://www.scs.stanford.edu/17wi-cs140/
   * Tests Passed 
 
 - [ ] **Project 2: User Programs**
+  * Argument Passing
+  * User Program Execution and Management: Process Control Block
+  * System Calls
 
 - [ ] **Project 3: Virtual Memory**
 
