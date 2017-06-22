@@ -20,7 +20,7 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
-static void push_args (const char *[], int cnt, void **esp);
+static void push_args (const char * tokens[], int argc, void **esp);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -60,7 +60,7 @@ process_execute (const char *cmd)
     return PID_ERROR; 
   }
   proc->pid = PID_INIT; //set in start_process 
-  proc->cmdline = cmdline_copy;
+  proc->cmdline = cmd_copy;
   proc->parent_thread = thread_current ();
   proc->waiting = false;
   proc->exited = false;
@@ -81,14 +81,14 @@ process_execute (const char *cmd)
 
   // process created successfully
   if (proc->pid >= 0) {
-    list_push_back (&(thread_current ()->child_list), &pcb->elem);
+    list_push_back (&(thread_current ()->child_list), &(thread_current ()->childelem));
   }
 
   //free pages  
   if (cmd_copy) palloc_free_page (cmd_copy); 
   if (file_name) palloc_free_page (file_name); 
   
-  return pcb->pid;
+  return proc->pid;
 }
 
 /* A thread function that loads a user process and starts it
@@ -96,7 +96,7 @@ process_execute (const char *cmd)
 static void
 start_process (void *proc_)
 {
-  char *proc = proc_;
+  struct process *proc = proc_;
   char *cmd = (char *) proc->cmdline;
   struct thread *cur_t = thread_current ();
   bool success = false; 
@@ -127,14 +127,17 @@ start_process (void *proc_)
   if (success) {
     push_args (tokens, argc, &if_.esp);
   }
-  palloc_free_page (tokens);
-
+  //tokens could freed cos they have been copied on stack
+  palloc_free_page (tokens);  
 
 FINISH_STEP:
   palloc_free_page (cmd);
   /* map pid to tid, assign proc to thread struct */
   proc->pid = success ? (pid_t)(cur_t->tid) : PID_ERROR;
   cur_t->proc = proc;
+  list_init (&cur_t->file_list);
+  list_init (&cur_t->child_list);
+  list_elem_init (&cur_t->childelem);
   
   /* wake up process_execute () */
   sema_up (&proc->sema_init);
@@ -162,32 +165,119 @@ FINISH_STEP:
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (pid_t child_pid) 
 {
+  struct thread *cur_t = thread_current();
+  struct list *child_list = &(cur_t->child_list); 
+  struct thread *child_thread = NULL;
+  
+  /* check if it is the child process */
+  for (struct list_elem *e = list_begin (child_list); e != list_end (child_list);
+       e = list_next (e)) {
+    struct thread *t = list_entry (e, struct thread, childelem); 
+    if (child_thread->proc->pid == child_pid) {
+      child_thread = t;
+      break;  
+    }
+  }
 
-  return -1;
+  if (child_thread == NULL) { 
+    printf ("child thread NOT found: pid=%d", child_pid);
+    return -1;
+  }
+  
+  struct process *child_proc = child_thread->proc;
+  if (child_proc == NULL) { 
+    printf ("child process NOT found: pid=%d", child_pid);
+    return -1;
+  }
+  if (child_proc->waiting) {
+    printf ("process_wait has been called on child process: pid=%d", child_pid);
+    return -1;
+  } else {
+    child_proc->waiting = true;
+  }
+  
+  //wait for terminate
+  if (!child_proc->exited) {
+    sema_down (&child_proc->sema_wait); 
+  }
+  ASSERT (child_proc->exited);
+
+  ASSERT (in_list(&child_thread->childelem));
+  list_remove (&child_thread->childelem); 
+
+  int exitcode = child_proc->exitcode;
+  palloc_free_page (child_proc);
+
+  printf ("%s: exit(%d)\n", child_thread->name, exitcode); 
+  
+  return exitcode; 
 }
 
 /* Free the current process's resources. */
 void
 process_exit (void)
 {
-  struct thread *cur = thread_current ();
+  struct thread *cur_t = thread_current ();
   uint32_t *pd;
+
+  /* free resources */
+  /* file descriptor */
+  struct list *fd_list = &cur_t->file_list;
+  while (!list_empty (fd_list)) {
+    struct list_elem *e = list_pop_front (fd_list);
+    struct file_desc *desc = list_entry (e, struct file_desc, elem);
+    file_close (desc->file);
+    palloc_free_page (desc);
+  }
+
+  /* child process */
+  /* for process which called process_wait on process_execute */
+  /* they wont be in this list */
+  struct list *child_list = &cur_t->child_list;
+  while (!list_empty (child_list)) {
+    struct list_elem *e = list_pop_front (child_list);
+    struct thread *t = list_entry (e, struct thread, childelem);
+    if (t->proc->exited) {
+      palloc_free_page (t->proc); /* take care of case where parent does not call process_wait */
+    } else {
+      t->proc->orphan = true;
+      t->proc->parent_thread = NULL;
+    }
+  }
+  
+  /* release file */
+  if (cur_t->exec_file != NULL) {
+    file_allow_write (cur_t->exec_file);
+    file_close (cur_t->exec_file);
+    cur_t->exec_file = NULL;
+  }
+
+  /* unblock parent thread which is waiting */
+  cur_t->proc->exited = true;
+  /* need save it cos parent thread unblocked could desctroy child threads */
+  bool is_orphan = cur_t->proc->orphan; 
+  sema_up (&cur_t->proc->sema_wait);
+
+  if (is_orphan) {
+    /* take care of case where parent does not call process_wait */
+    palloc_free_page (&cur_t->proc);
+  }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
-  pd = cur->pagedir;
+  pd = cur_t->pagedir;
   if (pd != NULL) 
     {
       /* Correct ordering here is crucial.  We must set
-         cur->pagedir to NULL before switching page directories,
+         cur_t->pagedir to NULL before switching page directories,
          so that a timer interrupt can't switch back to the
          process page directory.  We must activate the base page
          directory before destroying the process's page
          directory, or our active page directory will be one
          that's been freed (and cleared). */
-      cur->pagedir = NULL;
+      cur_t->pagedir = NULL;
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
@@ -385,6 +475,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
 
+  /* Deny writes to file being executed */
+  file_deny_write (file);
+  thread_current ()->exec_file = file;
+
   success = true;
 
  done:
@@ -542,7 +636,7 @@ install_page (void *upage, void *kpage, bool writable)
 }
 
 static void 
-push_args (char * tokens[], int argc, void **esp)
+push_args (const char * tokens[], int argc, void **esp)
 {
   ASSERT(argc > 0);
 

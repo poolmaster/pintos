@@ -103,16 +103,16 @@ struct thread
     /* Debug Helpers */
     /*
      * struct semaphore *waiting_sema
-     * */;
+     * */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
-    struct process *proc                /* process control block */
-    struct list child_list;             /* list of children process of this thread */ 
+    struct process *proc;               /* process control block */
+    struct list child_list;             /* list of child threads of this thread */ 
+    struct list_elem childelem;         /* element of thread.child_list */
     struct list file_list;              /* files the thread holds */
     struct file *exec_file;             /* file bein executed by the process */
-    uint8_t *cur_esp;                   /* user program stack pointer */
 #endif
 
     /* Owned by thread.c. */
