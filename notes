@@ -24,3 +24,17 @@ carefully order updates and thread operations: thread operations will do context
   ready_list needs to be ordered: next_to_run () always return the front one
   waiters needs to be ordered: samaphore/lock's priority comes from waiter's highest priority
   holding_locks dont need to: we use find_min(max) to get the highest priority lock
+
+
+project 2
+
+1. high level thing: 
+  for each user program/process, it will be initiated by a kernel thread, usually go through steps like:
+    call process_wait -> onto a process_execute (), which triggers process_start() and in program, it makes system call sys_exit () to exit thread as well as exit process (process_exit ())
+  in in process_execute, new thread will be created. and in process_wait, it is in parent thread, it will remove the child user thread from its list and so on
+
+2. sys_exit will set process status, by pass in a status from program itself. e.g. sys_exit (-1)
+
+3. process_wait needs to return process_status, so free proc in process_wait until status bein captured
+  what if parent thread does not call process wait, ??? ??  then we dont free the resource  ???
+
