@@ -26,6 +26,7 @@ struct process {
 
 struct file_desc {
   struct list_elem elem;
+  int id;
   struct file* file;
   struct dir* dir;
 };
