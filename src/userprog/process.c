@@ -135,7 +135,7 @@ FINISH_STEP:
   /* map pid to tid, assign proc to thread struct */
   proc->pid = success ? (pid_t)(cur_t->tid) : PID_ERROR;
   cur_t->proc = proc;
-  list_init (&cur_t->file_list);
+  list_init (&cur_t->fd_list);
   list_init (&cur_t->child_list);
   list_elem_init (&cur_t->childelem);
   
@@ -209,13 +209,12 @@ process_wait (pid_t child_pid)
 
   int exitcode = child_proc->exitcode;
   palloc_free_page (child_proc);
-
-  printf ("%s: exit(%d)\n", child_thread->name, exitcode); 
-  
+ 
   return exitcode; 
 }
 
 /* Free the current process's resources. */
+/* will be called in thread_exit () */
 void
 process_exit (void)
 {
@@ -224,7 +223,7 @@ process_exit (void)
 
   /* free resources */
   /* file descriptor */
-  struct list *fd_list = &cur_t->file_list;
+  struct list *fd_list = &cur_t->fd_list;
   while (!list_empty (fd_list)) {
     struct list_elem *e = list_pop_front (fd_list);
     struct file_desc *desc = list_entry (e, struct file_desc, elem);
@@ -254,6 +253,7 @@ process_exit (void)
     cur_t->exec_file = NULL;
   }
 
+  printf ("%s: exit(%d)\n", cur_t->name, cur_t->proc->exitcode); 
   /* unblock parent thread which is waiting */
   cur_t->proc->exited = true;
   /* need save it cos parent thread unblocked could desctroy child threads */
