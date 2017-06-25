@@ -3,6 +3,6 @@
 
 void syscall_init (void);
 
-int sys_exit (int); /* needed by other handlers, e.g. page fault */
+void sys_exit (int); /* needed by other handlers, e.g. page fault */
 
 #endif /* userprog/syscall.h */
