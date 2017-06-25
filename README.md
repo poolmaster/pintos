@@ -11,11 +11,10 @@ http://www.scs.stanford.edu/17wi-cs140/
 - [x] **Project 1: Threads**
   * SleepQueue to avoid busy waiting on timer sleep
   * Priority Scheduler
-  * Tests Passed 
 
-- [ ] **Project 2: User Programs**
+- [x] **Project 2: User Programs**
   * Argument Passing
-  * User Program Execution and Management: Process Control Block
+  * User Program Execution and Management
   * System Calls
 
 - [ ] **Project 3: Virtual Memory**
