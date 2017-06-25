@@ -111,7 +111,7 @@ struct thread
     struct process *proc;               /* process control block */
     struct list child_list;             /* list of child threads of this thread */ 
     struct list_elem childelem;         /* element of thread.child_list */
-    struct list file_list;              /* files the thread holds */
+    struct list fd_list;                /* files the thread holds */
     struct file *exec_file;             /* file bein executed by the process */
 #endif
 
